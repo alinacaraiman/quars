@@ -1,0 +1,17 @@
+[general]
+data_source = "csv"
+data_file = "data/raw/2025-04-08/hist_data_twelve.csv"
+
+
+[portofolio_optimization]
+method = "MVO"
+sub_method = "near-optimal"
+risk_free_rate = 0.01 # annualized
+params = [6, 0.95]
+
+[data_api]
+source = "twelve"
+tickers = ["AAPL", "GOOGL", "IBM", "USD/JPY"]
+start_date = "2020-01-01"
+end_date = "2024-12-31"
+timeframe = "daily"
