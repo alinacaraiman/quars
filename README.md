@@ -30,7 +30,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
   Plots the long-only efficient frontier with the capital allocation line (CAL) and the assets, and compares every method (equal-weight, MVO, near-optimal, near-optimal-short, risk-adjusted) on the frontier and by weights. The configured `sub_method` gets a separate return distribution with VaR and CVaR thresholds.
 
 5. **Variance Ratio Test:**
-  `quars::math::variance_ratio` computes the Lo-MacKinlay (1988) variance ratio of a return series with its homoskedastic and heteroskedasticity-robust test statistics.
+  `quars::math::variance_ratio` computes the Lo-MacKinlay (1988) variance ratio of a return series with its homoskedastic and heteroskedasticity-robust test statistics and p-values.
 
 ---
 ## Getting Started

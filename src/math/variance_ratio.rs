@@ -7,6 +7,9 @@ pub struct VarianceRatio {
     pub z: f64,
     /// Heteroskedasticity-robust test statistic
     pub z_robust: f64,
+    /// Two-sided p-values of `z` and `z_robust`
+    pub p: f64,
+    pub p_robust: f64,
 }
 
 /// Lo-MacKinlay (1988) variance ratio of `q`-period to one-period returns,
@@ -42,11 +45,24 @@ pub fn variance_ratio(returns: &[f64], q: usize) -> Result<VarianceRatio, Box<dy
         })
         .sum();
 
+    let (z, z_robust) = ((vr - 1.0) / phi.sqrt(), (vr - 1.0) / theta.sqrt());
     Ok(VarianceRatio {
         vr,
-        z: (vr - 1.0) / phi.sqrt(),
-        z_robust: (vr - 1.0) / theta.sqrt(),
+        z,
+        z_robust,
+        p: two_sided_p(z),
+        p_robust: two_sided_p(z_robust),
     })
+}
+
+/// P(|Z| > |z|) for a standard normal Z, erfc by Abramowitz-Stegun 7.1.26 (error < 1.5e-7)
+fn two_sided_p(z: f64) -> f64 {
+    let x = z.abs() / std::f64::consts::SQRT_2;
+    let t = 1.0 / (1.0 + 0.3275911 * x);
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    poly * (-x * x).exp()
 }
 
 #[cfg(test)]
@@ -58,37 +74,75 @@ mod tests {
         0.013, -0.008, 0.002, 0.007,
     ];
 
-    // (q, vr, z, z_robust) from Python `arch.unitroot.VarianceRatio`
-    const REFERENCE: [(usize, f64, f64, f64); 2] = [
-        (2, 0.414845134, -2.340619463, -2.468044888),
-        (4, 0.370074869, -1.346836582, -1.576803609),
+    // (q, vr, z, z_robust, p, p_robust) from Python `arch.unitroot.VarianceRatio`
+    const REFERENCE: [(usize, [f64; 5]); 2] = [
+        (
+            2,
+            [
+                0.414845134,
+                -2.340619463,
+                -2.468044888,
+                0.019251778,
+                0.013585328,
+            ],
+        ),
+        (
+            4,
+            [
+                0.370074869,
+                -1.346836582,
+                -1.576803609,
+                0.178032870,
+                0.114840721,
+            ],
+        ),
     ];
 
-    fn close(a: f64, b: f64) -> bool {
-        (a - b).abs() < 1e-6
+    // r_t = phi * r_{t-1} + e_t with uniform e_t from a fixed linear congruential generator
+    fn ar1(phi: f64) -> Vec<f64> {
+        let (mut state, mut r) = (1u64, 0.0);
+        (0..1024)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                r = phi * r + (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5;
+                r
+            })
+            .collect()
     }
 
     #[test]
     fn matches_reference() {
-        for (q, vr, z, z_robust) in REFERENCE {
+        for (q, expected) in REFERENCE {
             let r = variance_ratio(&RETURNS, q).unwrap();
-            assert!(
-                close(r.vr, vr) && close(r.z, z) && close(r.z_robust, z_robust),
-                "{r:?}"
-            );
+            let actual = [r.vr, r.z, r.z_robust, r.p, r.p_robust];
+            for (a, e) in actual.iter().zip(expected) {
+                assert!((a - e).abs() < 1e-6, "{r:?}");
+            }
         }
     }
 
     #[test]
-    fn direction() {
-        let reverting: Vec<f64> = (0..64)
-            .map(|i| if i % 2 == 0 { 1.0 } else { -1.2 })
-            .collect();
-        let persistent: Vec<f64> = (0..64)
-            .map(|i| if i / 8 % 2 == 0 { 1.0 } else { -1.2 })
-            .collect();
-        assert!(variance_ratio(&reverting, 2).unwrap().vr < 0.5);
-        assert!(variance_ratio(&persistent, 2).unwrap().vr > 1.5);
+    fn iid_is_not_rejected() {
+        for q in [2, 4] {
+            let r = variance_ratio(&ar1(0.0), q).unwrap();
+            assert!((r.vr - 1.0).abs() < 0.15 && r.p_robust > 0.05, "{r:?}");
+        }
+    }
+
+    #[test]
+    fn ar1_is_rejected() {
+        let persistent = variance_ratio(&ar1(0.5), 2).unwrap();
+        assert!(
+            persistent.vr > 1.3 && persistent.p_robust < 0.01,
+            "{persistent:?}"
+        );
+        let reverting = variance_ratio(&ar1(-0.5), 2).unwrap();
+        assert!(
+            reverting.vr < 0.7 && reverting.p_robust < 0.01,
+            "{reverting:?}"
+        );
     }
 
     #[test]
