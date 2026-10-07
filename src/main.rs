@@ -18,8 +18,11 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let stats = portfolio::calculate_portfolio_stats(&historical_data)
         .expect("Error computing portfolio stats");
     let po = &settings.portofolio_optimization;
-    let portfolios =
-        optimization::optimize_portfolios(&stats, po).expect("Error in portfolio optimization");
+    // params: tau, then theta defaulting to the paper's 0.95
+    let tau = *po.params.first().ok_or("params must start with tau")?;
+    let theta = po.params.get(1).copied().unwrap_or(0.95);
+    let portfolios = optimization::optimize_portfolios(&stats, po.risk_free_rate, tau, theta)
+        .expect("Error in portfolio optimization");
 
     let risk_free = optimization::annual_to_daily_rate(po.risk_free_rate);
     for p in &portfolios {

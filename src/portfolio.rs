@@ -1,5 +1,7 @@
+#[cfg(feature = "data")]
 use crate::data::HistoricalData;
 use ndarray::{Array1, Array2, Axis};
+#[cfg(feature = "data")]
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -10,6 +12,26 @@ pub struct PortfolioStats {
     pub returns_matrix: Array2<f64>, // shape: (n_assets, n_samples)
 }
 
+impl PortfolioStats {
+    /// From an (n_assets, n_samples) returns matrix
+    pub fn from_returns(
+        assets: Vec<String>,
+        returns_matrix: Array2<f64>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mean_returns = returns_matrix
+            .mean_axis(Axis(1))
+            .ok_or("Failed to compute mean returns")?;
+        let covariance = compute_sample_covariance(&returns_matrix)?;
+        Ok(Self {
+            assets,
+            mean_returns,
+            covariance,
+            returns_matrix,
+        })
+    }
+}
+
+#[cfg(feature = "data")]
 pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats, Box<dyn Error>> {
     // Group prices by asset
     let mut asset_prices: HashMap<String, Vec<f64>> = HashMap::new();
@@ -48,20 +70,7 @@ pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats
         }
     }
 
-    let mean_returns = returns_matrix
-        .mean_axis(Axis(1))
-        .ok_or("Failed to compute mean returns")?;
-
-    // 4. Compute sample covariance
-    //    Cov = 1/(T-1) * (R_centered * R_centered^T)
-    let covariance = compute_sample_covariance(&returns_matrix)?;
-
-    Ok(PortfolioStats {
-        assets,
-        mean_returns,
-        covariance,
-        returns_matrix,
-    })
+    PortfolioStats::from_returns(assets, returns_matrix)
 }
 
 /// Compute sample covariance from (n_assets x n_samples) returns

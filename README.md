@@ -65,6 +65,15 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    timeframe = "daily"            # Time interval for data ("5min", "daily", "weekly", "monthly", etc.)
 
    ```
+## Using quars as a library
+The data fetching and the plots are Cargo features, both on by default. For only the maths (optimisation, portfolio statistics, variance ratio):
+```toml
+quars = { git = "https://github.com/alinacaraiman/quars", default-features = false }
+```
+- `data`: config file, CSV and the data brokers
+- `visualization`: the plots
+- `openblas`: see below
+
 ## OpenBLAS (optional)
 By default quars needs no system library. Building with `cargo build --features openblas` computes the risk-adjusted portfolio through the inverse covariance instead of the iterative solver, and requires OpenBLAS. For more [information](https://github.com/blas-lapack-rs/openblas-src) on OpenBLAS in Rust.
 

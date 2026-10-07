@@ -1,7 +1,4 @@
-use crate::{
-    config::PortofolioOptimization, math::optimization::minimize_quadratic,
-    portfolio::PortfolioStats,
-};
+use crate::{math::optimization::minimize_quadratic, portfolio::PortfolioStats};
 use ndarray::{Array1, Array2};
 #[cfg(feature = "openblas")]
 use ndarray_linalg::InverseInto;
@@ -25,13 +22,13 @@ impl Portfolio {
     }
 }
 
-/// Every method at the same `params` (τ, then θ defaulting to 0.95), named by its `sub_method`
+/// Every method at the same τ and θ, named by its `sub_method`
 pub fn optimize_portfolios(
     stats: &PortfolioStats,
-    po: &PortofolioOptimization,
+    risk_free_rate: f64,
+    tau: f64,
+    theta: f64,
 ) -> Result<Vec<Portfolio>, Box<dyn Error>> {
-    let tau = *po.params.first().ok_or("params must start with tau.")?;
-    let theta = po.params.get(1).copied().unwrap_or(0.95);
     let (mean, cov) = (&stats.mean_returns, &stats.covariance);
     let n = mean.len();
     let weights = [
@@ -47,7 +44,7 @@ pub fn optimize_portfolios(
         ),
         (
             "risk-adjusted",
-            risk_adjusted_weights(stats, po.risk_free_rate, tau)?,
+            risk_adjusted_weights(stats, risk_free_rate, tau)?,
         ),
     ];
     Ok(weights
