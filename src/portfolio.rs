@@ -20,7 +20,8 @@ pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats
             .push(record.price);
     }
 
-    let assets: Vec<String> = asset_prices.keys().cloned().collect();
+    let mut assets: Vec<String> = asset_prices.keys().cloned().collect();
+    assets.sort();
     let n = assets.len();
     if n == 0 {
         return Err("No assets found in data.".into());

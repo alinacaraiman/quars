@@ -6,91 +6,87 @@ use ndarray::{Array1, Array2};
 use ndarray_linalg::InverseInto;
 use std::error::Error;
 
-// Optim. method Enum for Mean Variance Optimization
-pub enum MvoOptMethod {
-    // Maximize risk-adjusted return
-    RiskAdjusted { tau: f64 },
-    // Near-optimality method, minimize concentration of weights after computing standart MVO
-    NearOptimal { tau: f64, theta: f64, short: bool },
-}
-
-impl MvoOptMethod {
-    pub fn from_config(portofolio_optimization_config: &PortofolioOptimization) -> Self {
-        match portofolio_optimization_config.sub_method.as_str() {
-            "risk-adjusted" => Self::RiskAdjusted {
-                tau: portofolio_optimization_config.params[0],
-            },
-            sub_method @ ("near-optimal" | "near-optimal-short") => Self::NearOptimal {
-                tau: portofolio_optimization_config.params[0],
-                theta: portofolio_optimization_config.params[1],
-                short: sub_method == "near-optimal-short",
-            },
-            _ => Self::RiskAdjusted { tau: 0.3 },
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct FrontierPoint {
-    risk_free_weight: f64,
-    risky_weights: Vec<f64>,
+pub struct Portfolio {
+    pub name: &'static str,
+    pub weights: Vec<f64>,
     pub expected_return: f64,
-    pub portfolio_std: f64,
-    sharpe_ratio: f64,
+    pub std: f64,
 }
 
-#[derive(Debug)]
-pub struct OptimizationResults {
-    pub frontier: Vec<FrontierPoint>,
-    // The optimal risky asset weights
-    pub optimal_risky_portfolio: Vec<f64>,
-    // Expected return of the tangency portfolio
-    pub optimal_risky_return: f64,
-    pub optimal_risky_std: f64,
-    pub max_sharpe: f64,
-}
-
-pub fn optimize_portfolio(
-    stats: &PortfolioStats,
-    n_points: usize,
-    po: &PortofolioOptimization,
-) -> Result<OptimizationResults, Box<dyn Error>> {
-    let opt_method = MvoOptMethod::from_config(po);
-    match opt_method {
-        MvoOptMethod::RiskAdjusted { tau } => {
-            optimize_risk_adjusted(stats, po.risk_free_rate, tau, n_points)
-        }
-        MvoOptMethod::NearOptimal { theta, tau, short } => {
-            let weights =
-                near_optimal_weights(&stats.mean_returns, &stats.covariance, tau, theta, short)?;
-            Ok(build_results(stats, po.risk_free_rate, weights, n_points))
+impl Portfolio {
+    fn new(name: &'static str, weights: Array1<f64>, stats: &PortfolioStats) -> Self {
+        Self {
+            name,
+            expected_return: stats.mean_returns.dot(&weights),
+            std: weights.dot(&stats.covariance.dot(&weights)).sqrt(),
+            weights: weights.to_vec(),
         }
     }
 }
 
-fn optimize_risk_adjusted(
+/// Every method at the same `params` (τ, then θ defaulting to 0.95), named by its `sub_method`
+pub fn optimize_portfolios(
+    stats: &PortfolioStats,
+    po: &PortofolioOptimization,
+) -> Result<Vec<Portfolio>, Box<dyn Error>> {
+    let tau = *po.params.first().ok_or("params must start with tau.")?;
+    let theta = po.params.get(1).copied().unwrap_or(0.95);
+    let (mean, cov) = (&stats.mean_returns, &stats.covariance);
+    let n = mean.len();
+    let weights = [
+        ("equal-weight", Array1::from_elem(n, 1.0 / n as f64)),
+        ("mvo", near_optimal_weights(mean, cov, tau, 1.0, false)?),
+        (
+            "near-optimal",
+            near_optimal_weights(mean, cov, tau, theta, false)?,
+        ),
+        (
+            "near-optimal-short",
+            near_optimal_weights(mean, cov, tau, theta, true)?,
+        ),
+        (
+            "risk-adjusted",
+            risk_adjusted_weights(stats, po.risk_free_rate, tau)?,
+        ),
+    ];
+    Ok(weights
+        .into_iter()
+        .map(|(name, w)| Portfolio::new(name, w, stats))
+        .collect())
+}
+
+/// Long-only efficient frontier as (std, expected return), swept over risk aversion
+pub fn efficient_frontier(stats: &PortfolioStats, n_points: usize) -> Vec<(f64, f64)> {
+    let (mean, cov) = (&stats.mean_returns, &stats.covariance);
+    let spread = mean.fold(f64::MIN, |a, &b| a.max(b)) - mean.fold(f64::MAX, |a, &b| a.min(b));
+    let scale = spread / cov.diag().fold(f64::MIN, |a, &b| a.max(b));
+    let mut x = Array1::from_elem(mean.len(), 1.0 / mean.len() as f64);
+    (0..n_points)
+        .map(|i| {
+            let gamma = scale * 10f64.powf(3.0 - 5.0 * i as f64 / (n_points - 1) as f64);
+            x = minimize_quadratic(&(cov * gamma), mean, x.clone(), false);
+            (x.dot(&cov.dot(&x)).sqrt(), mean.dot(&x))
+        })
+        .collect()
+}
+
+fn risk_adjusted_weights(
     stats: &PortfolioStats,
     risk_free_rate: f64,
     tau: f64,
-    n_points: usize,
-) -> Result<OptimizationResults, Box<dyn Error>> {
+) -> Result<Array1<f64>, Box<dyn Error>> {
     let n = stats.assets.len();
-    let mean = stats.mean_returns.clone();
-    let cov = stats.covariance.clone();
-    let daily_risk_free = annual_to_daily_rate(risk_free_rate);
-    let cov_inv: Array2<f64> = cov.clone().inv_into()?;
+    let cov_inv: Array2<f64> = stats.covariance.clone().inv_into()?;
     let ones = Array1::<f64>::ones(n);
-    let excess = &mean - ones.mapv(|_| daily_risk_free);
-    let A = ones.dot(&cov_inv.dot(&ones));
-    let B = ones.dot(&cov_inv.dot(&excess));
-    let lambda_multiplier = (B - 2.0 * tau) / A;
-    let factor = 1.0 / (2.0 * tau);
-    let optimal_risky = cov_inv.dot(&(&excess - ones.mapv(|_| lambda_multiplier))) * factor;
-    let sum_weights = optimal_risky.sum();
-    if (sum_weights - 1.0).abs() > 1e-6 {
+    let excess = &stats.mean_returns - annual_to_daily_rate(risk_free_rate);
+    let a = ones.dot(&cov_inv.dot(&ones));
+    let b = ones.dot(&cov_inv.dot(&excess));
+    let lambda_multiplier = (b - 2.0 * tau) / a;
+    let optimal_risky = cov_inv.dot(&(&excess - lambda_multiplier)) / (2.0 * tau);
+    if (optimal_risky.sum() - 1.0).abs() > 1e-6 {
         return Err("Optimal risky weights do not sum to 1.".into());
     }
-    Ok(build_results(stats, risk_free_rate, optimal_risky, n_points))
+    Ok(optimal_risky)
 }
 
 /// Near-optimality method (Lolic, 2024).
@@ -144,48 +140,6 @@ fn near_optimal_weights(
     Ok(solve(hi, x))
 }
 
-fn build_results(
-    stats: &PortfolioStats,
-    risk_free_rate: f64,
-    optimal_risky: Array1<f64>,
-    n_points: usize,
-) -> OptimizationResults {
-    let daily_risk_free = annual_to_daily_rate(risk_free_rate);
-    let optimal_risky_return = stats.mean_returns.dot(&optimal_risky);
-    let variance_risky = optimal_risky.dot(&stats.covariance.dot(&optimal_risky));
-    let optimal_risky_std = variance_risky.sqrt();
-    let max_sharpe = (optimal_risky_return - daily_risk_free) / optimal_risky_std;
-    let max_leverage = 2.0;
-    let lambda_step = max_leverage / (n_points as f64 - 1.0);
-    let mut frontier = Vec::with_capacity(n_points);
-    for i in 0..n_points {
-        let leverage = i as f64 * lambda_step;
-        let risk_free_weight = 1.0 - leverage;
-        let scaled_risky: Vec<f64> = optimal_risky.mapv(|w| leverage * w).to_vec();
-        let portfolio_return = daily_risk_free + leverage * (optimal_risky_return - daily_risk_free);
-        let portfolio_std = leverage * optimal_risky_std;
-        let sharpe_ratio = if leverage > 0.0 {
-            (portfolio_return - daily_risk_free) / portfolio_std
-        } else {
-            0.0
-        };
-        frontier.push(FrontierPoint {
-            risk_free_weight,
-            risky_weights: scaled_risky,
-            expected_return: portfolio_return,
-            portfolio_std,
-            sharpe_ratio,
-        });
-    }
-    OptimizationResults {
-        frontier,
-        optimal_risky_portfolio: optimal_risky.to_vec(),
-        optimal_risky_return,
-        optimal_risky_std,
-        max_sharpe,
-    }
-}
-
 pub fn annual_to_daily_rate(r_annual: f64) -> f64 {
     (1.0 + r_annual).powf(1.0 / 252.0) - 1.0
 }
@@ -194,7 +148,9 @@ mod tests {
     use super::*;
 
     // Capital markets assumptions of Lolic (2024), Appendix A
-    const MEAN: [f64; 10] = [0.085, 0.09, 0.1, 0.095, 0.04, 0.055, 0.05, 0.07, 0.075, 0.075];
+    const MEAN: [f64; 10] = [
+        0.085, 0.09, 0.1, 0.095, 0.04, 0.055, 0.05, 0.07, 0.075, 0.075,
+    ];
     const STD: [f64; 10] = [0.17, 0.19, 0.17, 0.2, 0.0, 0.04, 0.045, 0.11, 0.1, 0.17];
     const CORR: [[f64; 10]; 10] = [
         [1.0, 0.9, 0.7, 0.8, 0.0, 0.0, 0.0, 0.4, 0.5, 0.8],
@@ -231,7 +187,9 @@ mod tests {
 
     #[test]
     fn near_optimal_long_only() {
-        let expected = [0.0669, 0.0739, 0.2055, 0.0986, 0.0166, 0.147, 0.0985, 0.1145, 0.1786, 0.0];
+        let expected = [
+            0.0669, 0.0739, 0.2055, 0.0986, 0.0166, 0.147, 0.0985, 0.1145, 0.1786, 0.0,
+        ];
         assert_close(&weights(0.95, false), &expected);
     }
 
