@@ -1,3 +1,4 @@
+use crate::Error;
 pub mod alphavantage;
 pub mod twelve;
 pub mod yahoo;
@@ -5,7 +6,7 @@ use crate::config::Settings;
 
 use super::HistoricalData;
 
-pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn std::error::Error>> {
+pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Error> {
     match settings.data_api.source.to_lowercase().as_str() {
         "alphavantage" => alphavantage::fetch_data(settings).await,
         "twelve" => twelve::fetch_data(settings).await,

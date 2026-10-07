@@ -1,5 +1,5 @@
 use super::two_sided_p;
-use std::error::Error;
+use crate::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VarianceRatio {
@@ -16,7 +16,7 @@ pub struct VarianceRatio {
 /// Lo-MacKinlay (1988) variance ratio of `q`-period to one-period returns,
 /// with overlapping observations and bias correction.
 /// Under a random walk `vr` is 1 and both statistics are standard normal.
-pub fn variance_ratio(returns: &[f64], q: usize) -> Result<VarianceRatio, Box<dyn Error>> {
+pub fn variance_ratio(returns: &[f64], q: usize) -> Result<VarianceRatio, Error> {
     let n = returns.len();
     if q < 2 || n <= q {
         return Err("Need q >= 2 and more than q returns.".into());

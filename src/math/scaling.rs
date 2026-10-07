@@ -1,9 +1,9 @@
-use std::error::Error;
+use crate::Error;
 
 /// Hurst exponent by rescaled range analysis (Hurst, 1951): the slope of log R/S
 /// against log window size over `scales`.
 /// 0.5 for uncorrelated increments, biased upwards in short series.
-pub fn hurst_rs(series: &[f64], scales: &[usize]) -> Result<f64, Box<dyn Error>> {
+pub fn hurst_rs(series: &[f64], scales: &[usize]) -> Result<f64, Error> {
     scaling_exponent(series, scales, |window| {
         let mean = window.iter().sum::<f64>() / window.len() as f64;
         let (mut z, mut min, mut max, mut ss) = (0.0, f64::MAX, f64::MIN, 0.0);
@@ -20,7 +20,7 @@ pub fn hurst_rs(series: &[f64], scales: &[usize]) -> Result<f64, Box<dyn Error>>
 /// Detrended fluctuation analysis (Peng et al., 1994) with linear detrending: the slope
 /// of the log fluctuation against log window size over `scales`.
 /// 0.5 for uncorrelated noise, 1.5 for a random walk.
-pub fn dfa(series: &[f64], scales: &[usize]) -> Result<f64, Box<dyn Error>> {
+pub fn dfa(series: &[f64], scales: &[usize]) -> Result<f64, Error> {
     let mean = series.iter().sum::<f64>() / series.len() as f64;
     let mut sum = 0.0;
     let profile: Vec<f64> = series
@@ -51,7 +51,7 @@ fn scaling_exponent(
     series: &[f64],
     scales: &[usize],
     stat: impl Fn(&[f64]) -> f64,
-) -> Result<f64, Box<dyn Error>> {
+) -> Result<f64, Error> {
     if scales.len() < 2 || scales.iter().any(|&s| s < 4 || s > series.len()) {
         return Err("Need at least two scales, each between 4 and the series length.".into());
     }

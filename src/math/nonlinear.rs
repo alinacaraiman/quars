@@ -1,5 +1,5 @@
 use super::two_sided_p;
-use std::error::Error;
+use crate::Error;
 use std::f64::consts::PI;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -14,7 +14,7 @@ pub struct Bds {
 /// i.i.d., against dependence of any kind, linear or nonlinear.
 /// `m` is the embedding dimension and `epsilon_std` the distance threshold in standard
 /// deviations of the series, commonly 0.5 to 2. Compares all pairs, so O(n²) time.
-pub fn bds(series: &[f64], m: usize, epsilon_std: f64) -> Result<Bds, Box<dyn Error>> {
+pub fn bds(series: &[f64], m: usize, epsilon_std: f64) -> Result<Bds, Error> {
     let n = series.len();
     if m < 2 || n < m + 2 {
         return Err("Need m >= 2 and at least m + 2 observations.".into());
@@ -69,7 +69,7 @@ pub fn bds(series: &[f64], m: usize, epsilon_std: f64) -> Result<Bds, Box<dyn Er
 /// 0–1 test for chaos (Gottwald & Melbourne, 2009): near 0 for regular dynamics and
 /// near 1 for chaotic dynamics of a deterministic system.
 /// Random noise also gives a value near 1, so this does not tell chaos from noise.
-pub fn zero_one_test(series: &[f64]) -> Result<f64, Box<dyn Error>> {
+pub fn zero_one_test(series: &[f64]) -> Result<f64, Error> {
     let n = series.len();
     let n_cut = n / 10;
     if n_cut < 2 {
@@ -157,7 +157,7 @@ pub fn visibility_degrees(series: &[f64]) -> Vec<usize> {
 /// Kullback-Leibler divergence of the visibility degree distribution from the exact one
 /// of an i.i.d. series, P(k) = (1/3)(2/3)^(k − 2). Near 0 for uncorrelated noise.
 /// A distance, not a p-value: degrees of nearby observations are dependent.
-pub fn visibility_divergence(series: &[f64]) -> Result<f64, Box<dyn Error>> {
+pub fn visibility_divergence(series: &[f64]) -> Result<f64, Error> {
     let degrees: Vec<usize> = visibility_degrees(series)
         .into_iter()
         .filter(|&k| k >= 2)

@@ -1,6 +1,6 @@
 use plotters::coord::Shift;
 use plotters::prelude::*;
-use std::error::Error;
+use crate::Error;
 
 use crate::optimization::{annual_to_daily_rate, Portfolio};
 use crate::portfolio::PortfolioStats;
@@ -20,7 +20,7 @@ const VAR: RGBColor = RGBColor(208, 59, 59);
 
 type Area<'a> = DrawingArea<BitMapBackend<'a>, Shift>;
 
-fn drawing_area(path: &str, size: (u32, u32)) -> Result<Area<'_>, Box<dyn Error>> {
+fn drawing_area(path: &str, size: (u32, u32)) -> Result<Area<'_>, Error> {
     let root = BitMapBackend::new(path, size).into_drawing_area();
     root.fill(&SURFACE)?;
     Ok(root)
@@ -42,7 +42,7 @@ pub fn plot_efficient_frontier(
     frontier: &[(f64, f64)],
     portfolios: &[Portfolio],
     risk_free_rate: f64,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Error> {
     let root = drawing_area("efficient_frontier.png", (900, 600))?;
     let pct = |(std, ret): (f64, f64)| (std * 100.0, ret * 100.0);
     let frontier: Vec<_> = frontier.iter().copied().map(pct).collect();
@@ -124,7 +124,7 @@ pub fn plot_efficient_frontier(
 }
 
 /// Weights of every method, grouped by asset
-pub fn plot_portfolio(assets: &[String], portfolios: &[Portfolio]) -> Result<(), Box<dyn Error>> {
+pub fn plot_portfolio(assets: &[String], portfolios: &[Portfolio]) -> Result<(), Error> {
     let root = drawing_area("portfolio.png", (900, 500))?;
     let weights = || {
         portfolios
@@ -188,7 +188,7 @@ pub fn plot_return_distribution(
     returns: &[f64],
     var: f64,
     cvar: f64,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Error> {
     // Define output file and create drawing area.
     let output_path = "portfolio_distribution.png";
     let root = drawing_area(output_path, (800, 600))?;

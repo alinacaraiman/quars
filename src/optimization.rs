@@ -2,7 +2,7 @@ use crate::{math::optimization::minimize_quadratic, portfolio::PortfolioStats};
 use ndarray::{Array1, Array2};
 #[cfg(feature = "openblas")]
 use ndarray_linalg::InverseInto;
-use std::error::Error;
+use crate::Error;
 
 pub struct Portfolio {
     pub name: &'static str,
@@ -28,7 +28,7 @@ pub fn optimize_portfolios(
     risk_free_rate: f64,
     tau: f64,
     theta: f64,
-) -> Result<Vec<Portfolio>, Box<dyn Error>> {
+) -> Result<Vec<Portfolio>, Error> {
     let (mean, cov) = (&stats.mean_returns, &stats.covariance);
     let n = mean.len();
     let weights = [
@@ -73,7 +73,7 @@ fn risk_adjusted_weights(
     stats: &PortfolioStats,
     risk_free_rate: f64,
     tau: f64,
-) -> Result<Array1<f64>, Box<dyn Error>> {
+) -> Result<Array1<f64>, Error> {
     let n = stats.assets.len();
     let excess = &stats.mean_returns - annual_to_daily_rate(risk_free_rate);
     let optimal_risky = solve_risk_adjusted(&stats.covariance, &excess, tau, n)?;
@@ -90,7 +90,7 @@ fn solve_risk_adjusted(
     excess: &Array1<f64>,
     tau: f64,
     n: usize,
-) -> Result<Array1<f64>, Box<dyn Error>> {
+) -> Result<Array1<f64>, Error> {
     let cov_inv: Array2<f64> = cov.clone().inv_into()?;
     let ones = Array1::<f64>::ones(n);
     let a = ones.dot(&cov_inv.dot(&ones));
@@ -105,7 +105,7 @@ fn solve_risk_adjusted(
     excess: &Array1<f64>,
     tau: f64,
     n: usize,
-) -> Result<Array1<f64>, Box<dyn Error>> {
+) -> Result<Array1<f64>, Error> {
     let x_equal = Array1::from_elem(n, 1.0 / n as f64);
     Ok(minimize_quadratic(&(cov * (2.0 * tau)), excess, x_equal, true))
 }
@@ -120,7 +120,7 @@ fn near_optimal_weights(
     tau: f64,
     theta: f64,
     short: bool,
-) -> Result<Array1<f64>, Box<dyn Error>> {
+) -> Result<Array1<f64>, Error> {
     let n = mean.len();
     let utility = |x: &Array1<f64>| mean.dot(x) - 0.5 * tau * x.dot(&cov.dot(x));
     let x_equal = Array1::from_elem(n, 1.0 / n as f64);

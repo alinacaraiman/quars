@@ -4,16 +4,16 @@ use crate::utils;
 use chrono::DateTime;
 use reqwest::Client;
 use serde_json::Value;
-use std::error::Error;
+use crate::Error;
 
 /// Fetch adjusted closes from the Yahoo Finance chart API (unofficial, no API key)
-pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn Error>> {
+pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Error> {
     let api = &settings.data_api;
     let interval = match api.timeframe.to_lowercase().as_str() {
         "daily" => "1d",
         "weekly" => "1wk",
         "monthly" => "1mo",
-        timeframe => return Err(format!("Unsupported timeframe: {}", timeframe).into()),
+        timeframe => return Err(Error::Data(format!("Unsupported timeframe: {}", timeframe))),
     };
     let timestamp = |date: &str| {
         utils::parse_date(date).map(|d| d.and_time(Default::default()).and_utc().timestamp())
@@ -37,16 +37,15 @@ pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn E
             result["timestamp"].as_array(),
             result["indicators"]["adjclose"][0]["adjclose"].as_array(),
         ) else {
-            return Err(format!(
+            return Err(Error::Data(format!(
                 "Error from Yahoo Finance for {}: {}",
                 ticker, json["chart"]["error"]
-            )
-            .into());
+            )));
         };
         for (t, close) in timestamps.iter().zip(closes) {
             if let (Some(t), Some(price)) = (t.as_i64(), close.as_f64()) {
                 let date =
-                    DateTime::from_timestamp(t, 0).ok_or("Invalid timestamp from Yahoo Finance")?;
+                    DateTime::from_timestamp(t, 0).ok_or(Error::Data("Invalid timestamp from Yahoo Finance".into()))?;
                 records.push(Record {
                     date: date.format("%Y-%m-%d").to_string(),
                     asset: ticker.clone(),

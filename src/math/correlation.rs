@@ -1,8 +1,8 @@
 use ndarray::{Array1, Array2};
-use std::error::Error;
+use crate::Error;
 
 /// Correlation matrix of a covariance matrix
-pub fn correlation(cov: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
+pub fn correlation(cov: &Array2<f64>) -> Result<Array2<f64>, Error> {
     let std = cov.diag().mapv(f64::sqrt);
     if std.iter().any(|s| !(*s > 0.0)) {
         return Err("Variances must be positive.".into());
@@ -18,7 +18,7 @@ pub fn correlation(cov: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
 pub fn clean_correlation(
     corr: &Array2<f64>,
     n_samples: usize,
-) -> Result<Array2<f64>, Box<dyn Error>> {
+) -> Result<Array2<f64>, Error> {
     let n = corr.nrows();
     let edge = (1.0 + (n as f64 / n_samples as f64).sqrt()).powi(2);
     let (mut values, vectors) = symmetric_eigen(corr);

@@ -3,7 +3,7 @@ use crate::data::HistoricalData;
 use ndarray::{Array1, Array2, Axis};
 #[cfg(feature = "data")]
 use std::collections::HashMap;
-use std::error::Error;
+use crate::Error;
 
 pub struct PortfolioStats {
     pub assets: Vec<String>,
@@ -17,7 +17,7 @@ impl PortfolioStats {
     pub fn from_returns(
         assets: Vec<String>,
         returns_matrix: Array2<f64>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Error> {
         let mean_returns = returns_matrix
             .mean_axis(Axis(1))
             .ok_or("Failed to compute mean returns")?;
@@ -32,7 +32,7 @@ impl PortfolioStats {
 }
 
 #[cfg(feature = "data")]
-pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats, Box<dyn Error>> {
+pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats, Error> {
     // Group prices by asset
     let mut asset_prices: HashMap<String, Vec<f64>> = HashMap::new();
     for record in data {
@@ -74,7 +74,7 @@ pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats
 }
 
 /// Compute sample covariance from (n_assets x n_samples) returns
-fn compute_sample_covariance(returns: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
+fn compute_sample_covariance(returns: &Array2<f64>) -> Result<Array2<f64>, Error> {
     let (n_assets, n_obs) = returns.dim();
     if n_obs < 2 {
         return Err("Not enough observations to compute covariance.".into());
