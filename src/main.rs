@@ -1,15 +1,8 @@
 use core::error;
 
 use chrono::Local;
-use utils::write_to_csv;
-
-mod config;
-mod data;
-mod optimization;
-mod portfolio;
-mod utils;
-mod visualization;
-mod math;
+use quars::utils::write_to_csv;
+use quars::{config, data, optimization, portfolio, visualization};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
