@@ -1,3 +1,4 @@
+pub mod correlation;
 pub mod optimization;
 pub mod scaling;
 pub mod variance_ratio;

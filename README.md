@@ -32,6 +32,12 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 5. **Variance Ratio Test:**
   `quars::math::variance_ratio` computes the Lo-MacKinlay (1988) variance ratio of a return series with its homoskedastic and heteroskedasticity-robust test statistics and p-values.
 
+6. **Scaling Exponents:**
+  `quars::math::scaling` estimates the Hurst exponent by rescaled range analysis (Hurst, 1951) and by detrended fluctuation analysis (Peng et al., 1994).
+
+7. **Correlation Structure:**
+  `quars::math::correlation` cleans a correlation matrix by random-matrix eigenvalue clipping (Laloux et al., 1999) and builds the minimum spanning tree of correlation distances (Mantegna, 1999).
+
 ---
 ## Getting Started
 
