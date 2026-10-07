@@ -41,6 +41,12 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 8. **Nonlinear Dynamics:**
   `quars::math::nonlinear` has the BDS test for dependence of any kind (Brock et al., 1996), the 0–1 test for chaos (Gottwald & Melbourne, 2009) and the horizontal visibility graph with its distance from pure noise (Luque et al., 2009).
 
+9. **Bonds:**
+  `quars::bonds::Bond` gives the price, yield to maturity, Macaulay and modified duration and convexity of a fixed-rate bond.
+
+10. **Options:**
+  `quars::options` prices European options on futures or forwards with Black (1976), with the Greeks and implied volatility, and options on a spot price with Black-Scholes-Merton.
+
 ---
 ## Getting Started
 
@@ -74,8 +80,14 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    timeframe = "daily"            # Time interval for data ("5min", "daily", "weekly", "monthly", etc.)
 
    ```
+## Examples
+One short program per module, none of which needs data or an API key:
+```bash
+cargo run --example variance_ratio   # also: scaling, nonlinear, correlation, optimization, bonds, options
+```
+
 ## Using quars as a library
-The data fetching and the plots are Cargo features, both on by default. For only the maths (optimisation, portfolio statistics, variance ratio):
+The data fetching and the plots are Cargo features, both on by default. For only the maths (everything in the examples):
 ```toml
 quars = { git = "https://github.com/alinacaraiman/quars", default-features = false }
 ```
