@@ -1,13 +1,13 @@
 # quars
 Robust tools for finance, econometrics, econophysics, and quantitative analysis in rust.
 
-Currently his repository hosts only an early implementation of a risk-adjusted mean‐variance portfolio optimizer in Rust.
+The repository hosts a mean‐variance portfolio optimizer with its data pipeline and plots, and a library of econometric, econophysics and pricing tools.
 
 ## Overview
 
 **Key Features (MVP)**
 
-1. **Data Collection**: Fetches or reads historical price data (CSV or placeholder for API).
+1. **Data Collection**: Fetches historical prices from Yahoo Finance, Twelve Data or Alpha Vantage, or reads them from a CSV file.
 2. **Portfolio Statistics**: Computes historical returns and a  covariance matrix.
 3. **Optimization (Risk-Adjusted Return Maximization)**:
   The current optimization method (Mean Variance Optimization) finds the portfolio that maximizes the risk-adjusted return. Aditionally, for demonstrative and educational purposes, you can use the near-optimality method (Marin Lolic, 2024) denoted in this [paper](https://www.mdpi.com/1911-8074/17/5/183). `near-optimal` is long-only as in the paper, `near-optimal-short` allows short positions. The risk-adjusted optimization is formalized as:
@@ -56,7 +56,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    git clone https://github.com/alinacaraiman/quars.git
    cd quars
    ```
-2. **Set the API Key of your preffered data broker**: Before running quars, you must set your API key as an environment variable. Alpha Vantage and Twelve API need a key, Yahoo Finance does not. Please refer from using any other variable name than **APP__DATA_API__API_KEY**. Example `.env` file:
+2. **Set an API key, only for Twelve Data or Alpha Vantage**: the default data broker, Yahoo Finance, needs none. For the other two, set your key as an environment variable. Please refer from using any other variable name than **APP__DATA_API__API_KEY**. Example `.env` file:
    ```dotenv
    APP__DATA_API__API_KEY=your_data_api_key_here
    ```
