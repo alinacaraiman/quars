@@ -84,39 +84,7 @@ fn optimize_risk_adjusted(
     if (sum_weights - 1.0).abs() > 1e-6 {
         return Err("Optimal risky weights do not sum to 1.".into());
     }
-    let optimal_risky_return = mean.dot(&optimal_risky);
-    let variance_risky = optimal_risky.dot(&cov.dot(&optimal_risky));
-    let optimal_risky_std = variance_risky.sqrt();
-    let max_sharpe = (optimal_risky_return - daily_risk_free) / optimal_risky_std;
-    let max_leverage = 2.0;
-    let lambda_step = max_leverage / (n_points as f64 - 1.0);
-    let mut frontier = Vec::with_capacity(n_points);
-    for i in 0..n_points {
-        let leverage = i as f64 * lambda_step;
-        let risk_free_weight = 1.0 - leverage;
-        let scaled_risky: Vec<f64> = optimal_risky.mapv(|w| leverage * w).to_vec();
-        let portfolio_return = daily_risk_free + leverage * (optimal_risky_return - daily_risk_free);
-        let portfolio_std = leverage * optimal_risky_std;
-        let sharpe_ratio = if leverage > 0.0 {
-            (portfolio_return - daily_risk_free) / portfolio_std
-        } else {
-            0.0
-        };
-        frontier.push(FrontierPoint {
-            risk_free_weight,
-            risky_weights: scaled_risky,
-            expected_return: portfolio_return,
-            portfolio_std,
-            sharpe_ratio,
-        });
-    }
-    Ok(OptimizationResults {
-        frontier,
-        optimal_risky_portfolio: optimal_risky.to_vec(),
-        optimal_risky_return,
-        optimal_risky_std,
-        max_sharpe,
-    })
+    Ok(build_results(stats, risk_free_rate, optimal_risky, n_points))
 }
 
 /// Near-optimality method implementation.
@@ -195,12 +163,20 @@ fn optimize_near_optimal(
             }
         }
     }
-    let optimal_risky = best_blend;
-    let optimal_risky_return = mean.dot(&optimal_risky);
-    let variance_risky = optimal_risky.dot(&cov.dot(&optimal_risky));
+    Ok(build_results(stats, risk_free_rate, best_blend, n_points))
+}
+
+fn build_results(
+    stats: &PortfolioStats,
+    risk_free_rate: f64,
+    optimal_risky: Array1<f64>,
+    n_points: usize,
+) -> OptimizationResults {
+    let daily_risk_free = annual_to_daily_rate(risk_free_rate);
+    let optimal_risky_return = stats.mean_returns.dot(&optimal_risky);
+    let variance_risky = optimal_risky.dot(&stats.covariance.dot(&optimal_risky));
     let optimal_risky_std = variance_risky.sqrt();
     let max_sharpe = (optimal_risky_return - daily_risk_free) / optimal_risky_std;
-
     let max_leverage = 2.0;
     let lambda_step = max_leverage / (n_points as f64 - 1.0);
     let mut frontier = Vec::with_capacity(n_points);
@@ -223,14 +199,13 @@ fn optimize_near_optimal(
             sharpe_ratio,
         });
     }
-
-    Ok(OptimizationResults {
+    OptimizationResults {
         frontier,
         optimal_risky_portfolio: optimal_risky.to_vec(),
         optimal_risky_return,
         optimal_risky_std,
         max_sharpe,
-    })
+    }
 }
 
 pub fn annual_to_daily_rate(r_annual: f64) -> f64 {
