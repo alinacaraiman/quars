@@ -8,7 +8,8 @@ pub fn minimize_quadratic(
     mut x: Array1<f64>,
     short: bool,
 ) -> Array1<f64> {
-    let step = 1.0 / q.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let norm = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let step = if norm > 0.0 { 1.0 / norm } else { 1.0 };
     for _ in 0..100_000 {
         let v = &x - &((q.dot(&x) - c) * step);
         let next = if short {

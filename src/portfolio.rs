@@ -1,5 +1,6 @@
 #[cfg(feature = "data")]
 use crate::data::HistoricalData;
+use crate::math::correlation::{clean_correlation, correlation};
 use crate::Error;
 use ndarray::{Array1, Array2, Axis};
 #[cfg(feature = "data")]
@@ -25,6 +26,16 @@ impl PortfolioStats {
             covariance,
             returns_matrix,
         })
+    }
+
+    /// Covariance with the correlations cleaned by random-matrix eigenvalue clipping
+    pub fn cleaned_covariance(&self) -> Result<Array2<f64>, Error> {
+        let cleaned =
+            clean_correlation(&correlation(&self.covariance)?, self.returns_matrix.ncols())?;
+        let std = self.covariance.diag().mapv(f64::sqrt);
+        Ok(Array2::from_shape_fn(cleaned.dim(), |(i, j)| {
+            cleaned[[i, j]] * std[i] * std[j]
+        }))
     }
 }
 

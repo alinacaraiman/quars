@@ -27,7 +27,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
   - $$\( \tau \)$$ is the risk-aversion parameter.
 
 4. **Efficient Frontier & Visualization:**
-  Plots the long-only efficient frontier with the capital allocation line (CAL) and the assets, and compares every method (equal-weight, MVO, near-optimal, near-optimal-short, risk-adjusted) on the frontier and by weights. The configured `sub_method` gets a separate return distribution with VaR and CVaR thresholds.
+  Plots the long-only efficient frontier with the capital allocation line (CAL) and the assets, and compares every method on the frontier and by weights: equal-weight, MVO, near-optimal, near-optimal-short, risk-adjusted, resampled (the paper's second method, asset resampling) and MVO on the random-matrix cleaned covariance. Also draws the minimum spanning tree of the correlations. The configured `sub_method` gets a separate return distribution with VaR and CVaR thresholds.
 
 5. **Variance Ratio Test:**
   `quars::math::variance_ratio` computes the Lo-MacKinlay (1988) variance ratio of a return series with its homoskedastic and heteroskedasticity-robust test statistics and p-values.
@@ -62,9 +62,9 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 
    [portofolio_optimization]
    method = "MVO"                 # The general method to be used for the optimization, currently only Mean-Variance Optimization supported
-   sub_method = "near-optimal" # Currently "risk-adjusted", "near-optimal" and "near-optimal-short" supported
+   sub_method = "near-optimal" # The method reported in detail: "equal-weight", "mvo", "near-optimal", "near-optimal-short", "risk-adjusted", "resampled" or "mvo-cleaned"
    risk_free_rate = 0.025         # The risk-free rate, used for portfolio optimization.
-   params = [0.1]                 # Depending on the chosen submethod, you can define a vector of parameters (e.g. Near-Optimality Method uses 2 parameters, Tau (risk-aversion parameter) and Theta (concentration parameter))
+   params = [6, 0.95]            # tau (risk aversion), theta (near-optimal utility floor, default 0.95), m (assets per resample, default half)
 
    [data_api]
    source = "twelve"              # Specify the data broker ("twelve" for Twelve Data, "alphavantage", "yahoo")

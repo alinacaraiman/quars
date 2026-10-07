@@ -1,8 +1,8 @@
+use crate::Error;
 use crate::{math::optimization::minimize_quadratic, portfolio::PortfolioStats};
 use ndarray::{Array1, Array2};
 #[cfg(feature = "openblas")]
 use ndarray_linalg::InverseInto;
-use crate::Error;
 
 pub struct Portfolio {
     pub name: &'static str,
@@ -22,16 +22,19 @@ impl Portfolio {
     }
 }
 
-/// Every method at the same τ and θ, named by its `sub_method`
+/// Every method at the same τ, θ and subset size `m`, named by its `sub_method`.
+/// `mvo-cleaned` is `mvo` on the random-matrix cleaned covariance, left out when an
+/// asset has no variance.
 pub fn optimize_portfolios(
     stats: &PortfolioStats,
     risk_free_rate: f64,
     tau: f64,
     theta: f64,
+    m: usize,
 ) -> Result<Vec<Portfolio>, Error> {
     let (mean, cov) = (&stats.mean_returns, &stats.covariance);
     let n = mean.len();
-    let weights = [
+    let mut weights = vec![
         ("equal-weight", Array1::from_elem(n, 1.0 / n as f64)),
         ("mvo", near_optimal_weights(mean, cov, tau, 1.0, false)?),
         (
@@ -46,7 +49,14 @@ pub fn optimize_portfolios(
             "risk-adjusted",
             risk_adjusted_weights(stats, risk_free_rate, tau)?,
         ),
+        ("resampled", resampled_weights(mean, cov, tau, m, 1000)?),
     ];
+    if let Ok(cleaned) = stats.cleaned_covariance() {
+        weights.push((
+            "mvo-cleaned",
+            near_optimal_weights(mean, &cleaned, tau, 1.0, false)?,
+        ));
+    }
     Ok(weights
         .into_iter()
         .map(|(name, w)| Portfolio::new(name, w, stats))
@@ -69,7 +79,7 @@ pub fn efficient_frontier(stats: &PortfolioStats, n_points: usize) -> Vec<(f64, 
 }
 
 /// Maximize (μ − r_f)ᵀx − τxᵀΣx subject to 1ᵀx = 1
-fn risk_adjusted_weights(
+pub fn risk_adjusted_weights(
     stats: &PortfolioStats,
     risk_free_rate: f64,
     tau: f64,
@@ -107,14 +117,19 @@ fn solve_risk_adjusted(
     n: usize,
 ) -> Result<Array1<f64>, Error> {
     let x_equal = Array1::from_elem(n, 1.0 / n as f64);
-    Ok(minimize_quadratic(&(cov * (2.0 * tau)), excess, x_equal, true))
+    Ok(minimize_quadratic(
+        &(cov * (2.0 * tau)),
+        excess,
+        x_equal,
+        true,
+    ))
 }
 
 /// Near-optimality method (Lolic, 2024).
 /// Step 1: maximize utility μᵀx − ½τxᵀΣx, giving ε.
 /// Step 2: minimize concentration xᵀx subject to utility ≥ θε.
 /// Both subject to 1ᵀx = 1, and x ≥ 0 unless `short`.
-fn near_optimal_weights(
+pub fn near_optimal_weights(
     mean: &Array1<f64>,
     cov: &Array2<f64>,
     tau: f64,
@@ -159,6 +174,42 @@ fn near_optimal_weights(
         }
     }
     Ok(solve(hi, x))
+}
+
+/// Asset resampling (Lolic, 2024, Method Two): long-only MVO on `iterations` random
+/// subsets of `m` assets, weights averaged. The draws are seeded, so results repeat.
+pub fn resampled_weights(
+    mean: &Array1<f64>,
+    cov: &Array2<f64>,
+    tau: f64,
+    m: usize,
+    iterations: usize,
+) -> Result<Array1<f64>, Error> {
+    let n = mean.len();
+    if m == 0 || m > n || iterations == 0 {
+        return Err("Need 1 <= m <= number of assets and at least one iteration.".into());
+    }
+    let mut state = 1u64;
+    let mut order: Vec<usize> = (0..n).collect();
+    let mut weights = Array1::<f64>::zeros(n);
+    for _ in 0..iterations {
+        // Partial Fisher-Yates shuffle with a linear congruential generator
+        for i in 0..m {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            order.swap(i, i + (state >> 33) as usize % (n - i));
+        }
+        let subset = &order[..m];
+        let sub_mean = Array1::from_iter(subset.iter().map(|&a| mean[a]));
+        let sub_cov = Array2::from_shape_fn((m, m), |(i, j)| cov[[subset[i], subset[j]]]);
+        let x_equal = Array1::from_elem(m, 1.0 / m as f64);
+        let x = minimize_quadratic(&(sub_cov * tau), &sub_mean, x_equal, false);
+        for (&asset, w) in subset.iter().zip(&x) {
+            weights[asset] += w / iterations as f64;
+        }
+    }
+    Ok(weights)
 }
 
 pub fn annual_to_daily_rate(r_annual: f64) -> f64 {
@@ -234,6 +285,22 @@ mod tests {
         for (w, e) in weights.iter().zip([0.45, 0.55]) {
             assert!((w - e).abs() < 1e-9, "{weights:?}");
         }
+    }
+
+    // Expected: all 252 five-asset subsets averaged. 1000 draws scatter around it,
+    // as the paper's Table 4 does.
+    #[test]
+    fn resampled_matches_enumeration() {
+        let mean = Array1::from_vec(MEAN.to_vec());
+        let cov = Array2::from_shape_fn((10, 10), |(i, j)| STD[i] * STD[j] * CORR[i][j]);
+        let weights = resampled_weights(&mean, &cov, 3.0, 5, 1000).unwrap();
+        let expected = [
+            0.0321, 0.0454, 0.2496, 0.0709, 0.0082, 0.1833, 0.0537, 0.0855, 0.2702, 0.0011,
+        ];
+        for (w, e) in weights.iter().zip(expected) {
+            assert!((w - e).abs() < 0.03, "{weights:?}");
+        }
+        assert!(resampled_weights(&mean, &cov, 3.0, 11, 10).is_err());
     }
 
     #[test]

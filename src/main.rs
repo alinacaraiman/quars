@@ -18,10 +18,14 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let stats = portfolio::calculate_portfolio_stats(&historical_data)
         .expect("Error computing portfolio stats");
     let po = &settings.portofolio_optimization;
-    // params: tau, then theta defaulting to the paper's 0.95
+    // params: tau, theta (default: the paper's 0.95), resampling subset size (default: half the assets)
     let tau = *po.params.first().ok_or("params must start with tau")?;
     let theta = po.params.get(1).copied().unwrap_or(0.95);
-    let portfolios = optimization::optimize_portfolios(&stats, po.risk_free_rate, tau, theta)
+    let m = po
+        .params
+        .get(2)
+        .map_or(stats.assets.len().div_ceil(2), |&m| m as usize);
+    let portfolios = optimization::optimize_portfolios(&stats, po.risk_free_rate, tau, theta, m)
         .expect("Error in portfolio optimization");
 
     let risk_free = optimization::annual_to_daily_rate(po.risk_free_rate);
@@ -43,6 +47,9 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let frontier = optimization::efficient_frontier(&stats, 50);
     visualization::plot_efficient_frontier(&stats, &frontier, &portfolios, po.risk_free_rate)?;
     visualization::plot_portfolio(&stats.assets, &portfolios)?;
+    if let Ok(corr) = quars::math::correlation::correlation(&stats.covariance) {
+        visualization::plot_correlation_tree(&stats.assets, &corr)?;
+    }
 
     let returns = portfolio::compute_portfolio_returns(&stats.returns_matrix, &selected.weights);
     let var_95 = portfolio::portfolio_var(&returns, 0.95).ok_or("No portfolio returns")?;
