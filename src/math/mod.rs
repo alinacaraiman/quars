@@ -4,14 +4,19 @@ pub mod optimization;
 pub mod scaling;
 pub mod variance_ratio;
 
-/// P(|Z| > |z|) for a standard normal Z, erfc by Abramowitz-Stegun 7.1.26 (error < 1.5e-7)
+/// Standard normal distribution function
+pub fn normal_cdf(x: f64) -> f64 {
+    0.5 * libm::erfc(-x / std::f64::consts::SQRT_2)
+}
+
+/// Standard normal density
+pub fn normal_pdf(x: f64) -> f64 {
+    (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt()
+}
+
+/// P(|Z| > |z|) for a standard normal Z
 pub(crate) fn two_sided_p(z: f64) -> f64 {
-    let x = z.abs() / std::f64::consts::SQRT_2;
-    let t = 1.0 / (1.0 + 0.3275911 * x);
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    poly * (-x * x).exp()
+    2.0 * normal_cdf(-z.abs())
 }
 
 /// Uniform noise in [-0.5, 0.5) from a fixed linear congruential generator

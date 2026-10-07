@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ndarray = "0.15"
+libm = "0.2"
 ndarray-linalg = { version = "0.15", features = ["openblas-system"], optional = true }
 openblas-src = { version = "0.10.11", optional = true }
 dotenv = { version = "0.15.0", optional = true }

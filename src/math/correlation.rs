@@ -1,5 +1,5 @@
-use ndarray::{Array1, Array2};
 use crate::Error;
+use ndarray::{Array1, Array2};
 
 /// Correlation matrix of a covariance matrix
 pub fn correlation(cov: &Array2<f64>) -> Result<Array2<f64>, Error> {
@@ -15,10 +15,7 @@ pub fn correlation(cov: &Array2<f64>) -> Result<Array2<f64>, Error> {
 /// Random-matrix cleaning by eigenvalue clipping (Laloux et al., 1999).
 /// Eigenvalues of `corr` up to the Marchenko-Pastur edge (1 + √(N/T))², for N assets
 /// and T = `n_samples`, count as noise and are replaced by their average.
-pub fn clean_correlation(
-    corr: &Array2<f64>,
-    n_samples: usize,
-) -> Result<Array2<f64>, Error> {
+pub fn clean_correlation(corr: &Array2<f64>, n_samples: usize) -> Result<Array2<f64>, Error> {
     let n = corr.nrows();
     let edge = (1.0 + (n as f64 / n_samples as f64).sqrt()).powi(2);
     let (mut values, vectors) = symmetric_eigen(corr);
