@@ -98,15 +98,13 @@ mod tests {
         ),
     ];
 
-    // r_t = phi * r_{t-1} + e_t with uniform e_t from a fixed linear congruential generator
+    // r_t = phi * r_{t-1} + e_t
     fn ar1(phi: f64) -> Vec<f64> {
-        let (mut state, mut r) = (1u64, 0.0);
-        (0..1024)
-            .map(|_| {
-                state = state
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                r = phi * r + (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5;
+        let mut r = 0.0;
+        crate::math::test_noise(1024)
+            .iter()
+            .map(|e| {
+                r = phi * r + e;
                 r
             })
             .collect()
