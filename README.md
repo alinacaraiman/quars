@@ -65,8 +65,8 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    timeframe = "daily"            # Time interval for data ("5min", "daily", "weekly", "monthly", etc.)
 
    ```
-## OpenBLAS
-To run properly some parts of this repo, you need to install OpenBLAS. For more [information](https://github.com/blas-lapack-rs/openblas-src) on OpenBLAS in Rust.
+## OpenBLAS (optional)
+By default quars needs no system library. Building with `cargo build --features openblas` computes the risk-adjusted portfolio through the inverse covariance instead of the iterative solver, and requires OpenBLAS. For more [information](https://github.com/blas-lapack-rs/openblas-src) on OpenBLAS in Rust.
 
 ### Windows
 **Install OpenBLAS via vcpkg:**

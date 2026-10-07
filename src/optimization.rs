@@ -3,6 +3,7 @@ use crate::{
     portfolio::PortfolioStats,
 };
 use ndarray::{Array1, Array2};
+#[cfg(feature = "openblas")]
 use ndarray_linalg::InverseInto;
 use std::error::Error;
 
@@ -70,23 +71,46 @@ pub fn efficient_frontier(stats: &PortfolioStats, n_points: usize) -> Vec<(f64, 
         .collect()
 }
 
+/// Maximize (μ − r_f)ᵀx − τxᵀΣx subject to 1ᵀx = 1
 fn risk_adjusted_weights(
     stats: &PortfolioStats,
     risk_free_rate: f64,
     tau: f64,
 ) -> Result<Array1<f64>, Box<dyn Error>> {
     let n = stats.assets.len();
-    let cov_inv: Array2<f64> = stats.covariance.clone().inv_into()?;
-    let ones = Array1::<f64>::ones(n);
     let excess = &stats.mean_returns - annual_to_daily_rate(risk_free_rate);
-    let a = ones.dot(&cov_inv.dot(&ones));
-    let b = ones.dot(&cov_inv.dot(&excess));
-    let lambda_multiplier = (b - 2.0 * tau) / a;
-    let optimal_risky = cov_inv.dot(&(&excess - lambda_multiplier)) / (2.0 * tau);
+    let optimal_risky = solve_risk_adjusted(&stats.covariance, &excess, tau, n)?;
     if (optimal_risky.sum() - 1.0).abs() > 1e-6 {
         return Err("Optimal risky weights do not sum to 1.".into());
     }
     Ok(optimal_risky)
+}
+
+/// Closed form through the inverse covariance
+#[cfg(feature = "openblas")]
+fn solve_risk_adjusted(
+    cov: &Array2<f64>,
+    excess: &Array1<f64>,
+    tau: f64,
+    n: usize,
+) -> Result<Array1<f64>, Box<dyn Error>> {
+    let cov_inv: Array2<f64> = cov.clone().inv_into()?;
+    let ones = Array1::<f64>::ones(n);
+    let a = ones.dot(&cov_inv.dot(&ones));
+    let b = ones.dot(&cov_inv.dot(excess));
+    let lambda_multiplier = (b - 2.0 * tau) / a;
+    Ok(cov_inv.dot(&(excess - lambda_multiplier)) / (2.0 * tau))
+}
+
+#[cfg(not(feature = "openblas"))]
+fn solve_risk_adjusted(
+    cov: &Array2<f64>,
+    excess: &Array1<f64>,
+    tau: f64,
+    n: usize,
+) -> Result<Array1<f64>, Box<dyn Error>> {
+    let x_equal = Array1::from_elem(n, 1.0 / n as f64);
+    Ok(minimize_quadratic(&(cov * (2.0 * tau)), excess, x_equal, true))
 }
 
 /// Near-optimality method (Lolic, 2024).
@@ -199,6 +223,20 @@ mod tests {
             0.0573, 0.6462, 1.0363, 0.0414, -4.1688, 3.2621, 1.2487, -0.8191, 1.0511, -1.3552,
         ];
         assert_close(&weights(0.95, true), &expected);
+    }
+
+    #[test]
+    fn risk_adjusted_two_assets() {
+        let stats = PortfolioStats {
+            assets: vec!["A".into(), "B".into()],
+            mean_returns: Array1::from_vec(vec![0.1, 0.05]),
+            covariance: Array2::from_diag(&Array1::from_vec(vec![0.04, 0.01])),
+            returns_matrix: Array2::zeros((2, 0)),
+        };
+        let weights = risk_adjusted_weights(&stats, 0.0, 2.0).unwrap().to_vec();
+        for (w, e) in weights.iter().zip([0.45, 0.55]) {
+            assert!((w - e).abs() < 1e-9, "{weights:?}");
+        }
     }
 
     #[test]
