@@ -29,6 +29,9 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 4. **Efficient Frontier & Visualization:**
   Generates plots for the efficient frontier and the capital allocation line (CAL) that incorporate the risk-free asset, along with a separate visualization of the portfolio return distribution with VaR and CVaR thresholds.
 
+5. **Variance Ratio Test:**
+  `quars::math::variance_ratio` computes the Lo-MacKinlay (1988) variance ratio of a return series with its homoskedastic and heteroskedasticity-robust test statistics.
+
 ---
 ## Getting Started
 
