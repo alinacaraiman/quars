@@ -10,7 +10,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 1. **Data Collection**: Fetches or reads historical price data (CSV or placeholder for API).
 2. **Portfolio Statistics**: Computes historical returns and a  covariance matrix.
 3. **Optimization (Risk-Adjusted Return Maximization)**:
-  The current optimization method (Mean Variance Optimization) finds the portfolio that maximizes the risk-adjusted return. Aditionally, for demonstrative and educational purposes, you can use the near-optimality method (Marin Lolic, 2024) denoted in this [paper](https://www.mdpi.com/1911-8074/17/5/183). The risk-adjusted optimization is formalized as:
+  The current optimization method (Mean Variance Optimization) finds the portfolio that maximizes the risk-adjusted return. Aditionally, for demonstrative and educational purposes, you can use the near-optimality method (Marin Lolic, 2024) denoted in this [paper](https://www.mdpi.com/1911-8074/17/5/183). `near-optimal` is long-only as in the paper, `near-optimal-short` allows short positions. The risk-adjusted optimization is formalized as:
 
   $$
   \begin{aligned}
@@ -53,7 +53,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 
    [portofolio_optimization]
    method = "MVO"                 # The general method to be used for the optimization, currently only Mean-Variance Optimization supported
-   sub_method = "near-optimal" # Currently "risk-adjusted" and "near-optimal" supported
+   sub_method = "near-optimal" # Currently "risk-adjusted", "near-optimal" and "near-optimal-short" supported
    risk_free_rate = 0.025         # The risk-free rate, used for portfolio optimization.
    params = [0.1]                 # Depending on the chosen submethod, you can define a vector of parameters (e.g. Near-Optimality Method uses 2 parameters, Tau (risk-aversion parameter) and Theta (concentration parameter))
 

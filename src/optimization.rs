@@ -1,4 +1,7 @@
-use crate::{config::PortofolioOptimization, portfolio::PortfolioStats};
+use crate::{
+    config::PortofolioOptimization, math::optimization::minimize_quadratic,
+    portfolio::PortfolioStats,
+};
 use ndarray::{Array1, Array2};
 use ndarray_linalg::InverseInto;
 use std::error::Error;
@@ -8,7 +11,7 @@ pub enum MvoOptMethod {
     // Maximize risk-adjusted return
     RiskAdjusted { tau: f64 },
     // Near-optimality method, minimize concentration of weights after computing standart MVO
-    NearOptimal { tau: f64, theta: f64 },
+    NearOptimal { tau: f64, theta: f64, short: bool },
 }
 
 impl MvoOptMethod {
@@ -17,9 +20,10 @@ impl MvoOptMethod {
             "risk-adjusted" => Self::RiskAdjusted {
                 tau: portofolio_optimization_config.params[0],
             },
-            "near-optimal" => Self::NearOptimal {
+            sub_method @ ("near-optimal" | "near-optimal-short") => Self::NearOptimal {
                 tau: portofolio_optimization_config.params[0],
                 theta: portofolio_optimization_config.params[1],
+                short: sub_method == "near-optimal-short",
             },
             _ => Self::RiskAdjusted { tau: 0.3 },
         }
@@ -56,8 +60,10 @@ pub fn optimize_portfolio(
         MvoOptMethod::RiskAdjusted { tau } => {
             optimize_risk_adjusted(stats, po.risk_free_rate, tau, n_points)
         }
-        MvoOptMethod::NearOptimal { theta, tau } => {
-            optimize_near_optimal(stats, po.risk_free_rate, tau, theta, n_points)
+        MvoOptMethod::NearOptimal { theta, tau, short } => {
+            let weights =
+                near_optimal_weights(&stats.mean_returns, &stats.covariance, tau, theta, short)?;
+            Ok(build_results(stats, po.risk_free_rate, weights, n_points))
         }
     }
 }
@@ -87,83 +93,55 @@ fn optimize_risk_adjusted(
     Ok(build_results(stats, risk_free_rate, optimal_risky, n_points))
 }
 
-/// Near-optimality method implementation.
-/// Step 1: Compute classic MVO
-/// Use a simple closed-form approximation assuming an unconstrained problem:
-/// x_mvo ∝ Σ⁻¹ * μ, then normalize so that 1ᵀx = 1.
-fn optimize_near_optimal(
-    stats: &PortfolioStats,
-    risk_free_rate: f64,
+/// Near-optimality method (Lolic, 2024).
+/// Step 1: maximize utility μᵀx − ½τxᵀΣx, giving ε.
+/// Step 2: minimize concentration xᵀx subject to utility ≥ θε.
+/// Both subject to 1ᵀx = 1, and x ≥ 0 unless `short`.
+fn near_optimal_weights(
+    mean: &Array1<f64>,
+    cov: &Array2<f64>,
     tau: f64,
     theta: f64,
-    n_points: usize,
-) -> Result<OptimizationResults, Box<dyn Error>> {
-    let n = stats.assets.len();
-    let mean = stats.mean_returns.clone();
-    let cov = stats.covariance.clone();
-    let cov_inv: Array2<f64> = cov.clone().inv_into()?;
-    let daily_risk_free = annual_to_daily_rate(risk_free_rate);
-    let x_mvo_unnorm = cov_inv.dot(&mean);
-    let sum_x = x_mvo_unnorm.sum();
-    let x_mvo = x_mvo_unnorm.mapv(|val| val / sum_x);
-    // Compute ex ante utility based on standart MVO: ε = μᵀx_mvo - ½γ x_mvoᵀΣx_mvo
-    let epsilon = mean.dot(&x_mvo) - 0.5 * tau * x_mvo.dot(&cov.dot(&x_mvo));
-    dbg!(&mean);
-    dbg!(&cov);
-    // Minimize concentration (xᵀx)
-    // As noted in the paper, near-optimality approach is not strictly linear and a solution for the
-    // minimization of the objective function, such that the constraining portofolio utility is greater
-    // or equal to a preset percentace (Theta) of the standard optimized portfolio.
-    // A computationally cheap and easy initial solution to that is to initialize an equal-weight portofolio and blend with the
-    // classic MVO one, until the utility is at least θε
-    // Cons: depending on the picked assets, most of the cases will lead to an equal-weighted portofolio, since the variance in
-    // weights due to the the brute-forced alpha is very low.
-    // Convex quadratic solver could lead to optimal weights.
+    short: bool,
+) -> Result<Array1<f64>, Box<dyn Error>> {
+    let n = mean.len();
+    let utility = |x: &Array1<f64>| mean.dot(x) - 0.5 * tau * x.dot(&cov.dot(x));
     let x_equal = Array1::from_elem(n, 1.0 / n as f64);
-    let mut best_blend = x_mvo.clone();
-
-    // Initialize concentration with the classic mvo weights
-    let mut weights_concentration = x_mvo.t().dot(&x_mvo);
-
-    // Set an arbitrary parameter alpha_0 equal to 1, minimizing at each iteration
-    // TODO, implement convex quadratic optimization
-    for i in 0..=100 {
-        let alpha = i as f64 / 100.0;
-        let x_blend = &x_equal * (1.0 - alpha) + &x_mvo * alpha;
-        let utility = mean.dot(&x_blend) - 0.5 * tau * x_blend.dot(&cov.dot(&x_blend));
-        // (x_blend.sum() - 1.0).abs() < 1e-6: for floating point tolerance
-        if utility >= theta * epsilon
-            && (x_blend.sum() - 1.0).abs() < 1e-6
-        {
-            // xᵀx
-            let concentration = x_blend.t().dot(&x_blend);
-            if concentration < weights_concentration {
-                print!("Concentraton: {:?}, best x blend {:?}, utility {:?}", concentration, x_blend, utility);
-                weights_concentration = concentration;
-                best_blend = x_blend;
-            }
-        }
+    let x_mvo = minimize_quadratic(&(cov * tau), mean, x_equal.clone(), short);
+    let floor = theta * utility(&x_mvo);
+    if utility(&x_equal) >= floor {
+        return Ok(x_equal);
+    }
+    if theta >= 1.0 {
+        return Ok(x_mvo);
     }
 
-    // repeat for inverse case
-    for i in 0..=100 {
-        let alpha = i as f64 / 100.0;
-        let x_blend = &x_equal * alpha + &x_mvo * (1.0 - alpha);
-        let utility = mean.dot(&x_blend) - 0.5 * tau * x_blend.dot(&cov.dot(&x_blend));
-        // (x_blend.sum() - 1.0).abs() < 1e-6: for floating point tolerance
-        if utility >= theta * epsilon
-            && (x_blend.sum() - 1.0).abs() < 1e-6
-        {
-            // xᵀx
-            let concentration = x_blend.t().dot(&x_blend);
-            if concentration < weights_concentration {
-                print!("Concentraton: {:?}, best x blend {:?}, utility {:?}", concentration, x_blend, utility);
-                weights_concentration = concentration;
-                best_blend = x_blend;
-            }
+    // Stationarity of step 2 for a multiplier λ: min ½xᵀ(2I + λτΣ)x − λμᵀx.
+    // Utility grows with λ, so bisect λ until it meets the floor.
+    let solve = |lambda: f64, x: Array1<f64>| {
+        let q = Array2::<f64>::eye(n) * 2.0 + cov * (lambda * tau);
+        minimize_quadratic(&q, &(mean * lambda), x, short)
+    };
+    let (mut lo, mut hi) = (0.0, 1.0);
+    let mut x = solve(hi, x_equal);
+    while utility(&x) < floor {
+        if hi > 1e12 {
+            return Err("Utility floor is not reachable.".into());
+        }
+        lo = hi;
+        hi *= 2.0;
+        x = solve(hi, x);
+    }
+    for _ in 0..50 {
+        let mid = 0.5 * (lo + hi);
+        x = solve(mid, x);
+        if utility(&x) < floor {
+            lo = mid;
+        } else {
+            hi = mid;
         }
     }
-    Ok(build_results(stats, risk_free_rate, best_blend, n_points))
+    Ok(solve(hi, x))
 }
 
 fn build_results(
@@ -210,4 +188,63 @@ fn build_results(
 
 pub fn annual_to_daily_rate(r_annual: f64) -> f64 {
     (1.0 + r_annual).powf(1.0 / 252.0) - 1.0
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Capital markets assumptions of Lolic (2024), Appendix A
+    const MEAN: [f64; 10] = [0.085, 0.09, 0.1, 0.095, 0.04, 0.055, 0.05, 0.07, 0.075, 0.075];
+    const STD: [f64; 10] = [0.17, 0.19, 0.17, 0.2, 0.0, 0.04, 0.045, 0.11, 0.1, 0.17];
+    const CORR: [[f64; 10]; 10] = [
+        [1.0, 0.9, 0.7, 0.8, 0.0, 0.0, 0.0, 0.4, 0.5, 0.8],
+        [0.9, 1.0, 0.7, 0.75, 0.0, 0.0, 0.0, 0.4, 0.5, 0.85],
+        [0.7, 0.7, 1.0, 0.7, 0.0, 0.0, 0.0, 0.5, 0.4, 0.7],
+        [0.8, 0.75, 0.7, 1.0, 0.0, 0.0, 0.0, 0.4, 0.5, 0.7],
+        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.4, 0.4, 0.1, 0.2],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.4, 1.0, 0.3, 0.1, 0.2],
+        [0.4, 0.4, 0.5, 0.4, 0.0, 0.4, 0.3, 1.0, 0.5, 0.4],
+        [0.5, 0.5, 0.4, 0.5, 0.0, 0.1, 0.1, 0.5, 1.0, 0.5],
+        [0.8, 0.85, 0.7, 0.7, 0.0, 0.2, 0.2, 0.4, 0.5, 1.0],
+    ];
+
+    fn weights(theta: f64, short: bool) -> Vec<f64> {
+        let mean = Array1::from_vec(MEAN.to_vec());
+        let cov = Array2::from_shape_fn((10, 10), |(i, j)| STD[i] * STD[j] * CORR[i][j]);
+        near_optimal_weights(&mean, &cov, 3.0, theta, short)
+            .unwrap()
+            .to_vec()
+    }
+
+    fn assert_close(actual: &[f64], expected: &[f64]) {
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-3, "{actual:?}");
+        }
+    }
+
+    #[test]
+    fn mvo_matches_paper_table_1() {
+        let expected = [0.0, 0.0, 0.438, 0.0, 0.0, 0.158, 0.0, 0.0, 0.404, 0.0];
+        assert_close(&weights(1.0, false), &expected);
+    }
+
+    #[test]
+    fn near_optimal_long_only() {
+        let expected = [0.0669, 0.0739, 0.2055, 0.0986, 0.0166, 0.147, 0.0985, 0.1145, 0.1786, 0.0];
+        assert_close(&weights(0.95, false), &expected);
+    }
+
+    #[test]
+    fn near_optimal_short() {
+        let expected = [
+            0.0573, 0.6462, 1.0363, 0.0414, -4.1688, 3.2621, 1.2487, -0.8191, 1.0511, -1.3552,
+        ];
+        assert_close(&weights(0.95, true), &expected);
+    }
+
+    #[test]
+    fn low_floor_gives_equal_weight() {
+        assert_close(&weights(0.5, false), &[0.1; 10]);
+    }
 }
