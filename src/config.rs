@@ -25,6 +25,7 @@ pub struct PortofolioOptimization {
 #[derive(Debug, Deserialize)]
 pub struct DataAPI {
     pub source: String,
+    #[serde(default)]
     pub api_key: String,
     pub tickers: Vec<String>,
     pub start_date: String,

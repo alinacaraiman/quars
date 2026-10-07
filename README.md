@@ -41,7 +41,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    git clone https://github.com/alinacaraiman/quars.git
    cd quars
    ```
-2. **Set the API Key of your preffered data broker**: Before running quars, you must set your API key as an environment variable. Currently only Alpha Vantage and Twelve API supported. Please refer from using any other variable name than **APP__DATA_API__API_KEY**. Example `.env` file:
+2. **Set the API Key of your preffered data broker**: Before running quars, you must set your API key as an environment variable. Alpha Vantage and Twelve API need a key, Yahoo Finance does not. Please refer from using any other variable name than **APP__DATA_API__API_KEY**. Example `.env` file:
    ```dotenv
    APP__DATA_API__API_KEY=your_data_api_key_here
    ```
@@ -58,7 +58,7 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
    params = [0.1]                 # Depending on the chosen submethod, you can define a vector of parameters (e.g. Near-Optimality Method uses 2 parameters, Tau (risk-aversion parameter) and Theta (concentration parameter))
 
    [data_api]
-   source = "twelve"              # Specify the data broker ("  twelve" for Twelve Data, "alphavantage", etc.)
+   source = "twelve"              # Specify the data broker ("twelve" for Twelve Data, "alphavantage", "yahoo")
    tickers = ["AAPL", "GOOGL"]      # List of ticker symbols to fetch data for.
    start_date = "2020-01-01"        # Start date for historical data (YYYY-MM-DD format).
    end_date = "2020-12-31"          # End date for historical data (YYYY-MM-DD format).
