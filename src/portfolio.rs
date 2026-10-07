@@ -107,27 +107,46 @@ pub fn compute_portfolio_returns(returns_matrix: &Array2<f64>, weights: &[f64]) 
     }
     port_returns
 }
-pub fn portfolio_var(returns: &[f64], alpha: f64) -> f64 {
-    let mut sorted = returns.to_owned();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
-    if idx >= sorted.len() {
-        return sorted[sorted.len() - 1];
+fn sorted_tail(returns: &[f64], alpha: f64) -> Option<(Vec<f64>, usize)> {
+    if returns.is_empty() {
+        return None;
     }
-    sorted[idx]
+    let mut sorted = returns.to_owned();
+    sorted.sort_by(f64::total_cmp);
+    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
+    Some((sorted, idx))
 }
 
-pub fn portfolio_cvar(returns: &[f64], alpha: f64) -> f64 {
-    let mut sorted = returns.to_owned();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+/// Historical VaR, `None` if `returns` is empty
+pub fn portfolio_var(returns: &[f64], alpha: f64) -> Option<f64> {
+    let (sorted, idx) = sorted_tail(returns, alpha)?;
+    Some(sorted[idx.min(sorted.len() - 1)])
+}
 
-    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
-    if idx >= sorted.len() {
-        return sorted[sorted.len() - 1];
+/// Historical CVaR, `None` if `returns` is empty
+pub fn portfolio_cvar(returns: &[f64], alpha: f64) -> Option<f64> {
+    let (sorted, idx) = sorted_tail(returns, alpha)?;
+    let tail = &sorted[..idx.clamp(1, sorted.len())];
+    Some(tail.iter().sum::<f64>() / tail.len() as f64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn var_cvar() {
+        let r: Vec<f64> = (1..=100).map(|x| x as f64).collect();
+        assert_eq!(portfolio_var(&r, 0.75), Some(26.0));
+        assert_eq!(portfolio_cvar(&r, 0.75), Some(13.0));
     }
 
-    // slice of worst returns
-    let tail = &sorted[0..idx];
-    tail.iter().sum::<f64>() / tail.len() as f64
+    #[test]
+    fn empty_and_nan() {
+        assert_eq!(portfolio_var(&[], 0.95), None);
+        assert_eq!(portfolio_cvar(&[], 0.95), None);
+        assert!(portfolio_var(&[f64::NAN, -1.0], 0.95).is_some());
+        assert_eq!(portfolio_cvar(&[1.0], 0.99), Some(1.0));
+    }
 }

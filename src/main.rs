@@ -49,8 +49,8 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
         &portfolio_stats.returns_matrix,
         &results.optimal_risky_portfolio,
     );
-    let var_95 = portfolio::portfolio_var(&tang_returns, 0.95);
-    let cvar_95 = portfolio::portfolio_cvar(&tang_returns, 0.95);
+    let var_95 = portfolio::portfolio_var(&tang_returns, 0.95).ok_or("No portfolio returns")?;
+    let cvar_95 = portfolio::portfolio_cvar(&tang_returns, 0.95).ok_or("No portfolio returns")?;
 
     println!("VaR(95%) = {:.2}%", var_95 * 100.0);
     println!("CVaR(95%) = {:.2}%", cvar_95 * 100.0);
