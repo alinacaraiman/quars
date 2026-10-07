@@ -1,3 +1,4 @@
+use super::two_sided_p;
 use std::error::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -53,16 +54,6 @@ pub fn variance_ratio(returns: &[f64], q: usize) -> Result<VarianceRatio, Box<dy
         p: two_sided_p(z),
         p_robust: two_sided_p(z_robust),
     })
-}
-
-/// P(|Z| > |z|) for a standard normal Z, erfc by Abramowitz-Stegun 7.1.26 (error < 1.5e-7)
-fn two_sided_p(z: f64) -> f64 {
-    let x = z.abs() / std::f64::consts::SQRT_2;
-    let t = 1.0 / (1.0 + 0.3275911 * x);
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    poly * (-x * x).exp()
 }
 
 #[cfg(test)]

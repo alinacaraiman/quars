@@ -38,6 +38,9 @@ Currently his repository hosts only an early implementation of a risk-adjusted m
 7. **Correlation Structure:**
   `quars::math::correlation` cleans a correlation matrix by random-matrix eigenvalue clipping (Laloux et al., 1999) and builds the minimum spanning tree of correlation distances (Mantegna, 1999).
 
+8. **Nonlinear Dynamics:**
+  `quars::math::nonlinear` has the BDS test for dependence of any kind (Brock et al., 1996), the 0–1 test for chaos (Gottwald & Melbourne, 2009) and the horizontal visibility graph with its distance from pure noise (Luque et al., 2009).
+
 ---
 ## Getting Started
 
