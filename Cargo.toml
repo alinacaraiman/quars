@@ -4,16 +4,36 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dotenv = "0.15.0"
-config = "0.13.3"
-serde = { version = "1.0", features = ["derive"] }
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
-csv = "1.1"
-argmin = "0.5"
-plotters = "0.3"
-chrono = "0.4.40"
-serde_json = "1.0.140"
-ndarray = { version = "0.15", features = ["blas"] }
-ndarray-linalg = { version = "0.15", features = ["openblas-system"] }
-openblas-src = { version = "0.10.11" }
+ndarray = "0.15"
+libm = "0.2"
+ndarray-linalg = { version = "0.15", features = ["openblas-system"], optional = true }
+openblas-src = { version = "0.10.11", optional = true }
+dotenv = { version = "0.15.0", optional = true }
+config = { version = "0.13.3", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+reqwest = { version = "0.11", features = ["json"], optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+csv = { version = "1.1", optional = true }
+chrono = { version = "0.4.40", optional = true }
+serde_json = { version = "1.0.140", optional = true }
+plotters = { version = "0.3", optional = true }
+
+[features]
+default = ["data", "visualization"]
+data = [
+    "dep:dotenv",
+    "dep:config",
+    "dep:serde",
+    "dep:reqwest",
+    "dep:tokio",
+    "dep:csv",
+    "dep:chrono",
+    "dep:serde_json",
+]
+visualization = ["dep:plotters"]
+openblas = ["ndarray/blas", "dep:ndarray-linalg", "dep:openblas-src"]
+
+[[bin]]
+name = "quars"
+path = "src/main.rs"
+required-features = ["data", "visualization"]

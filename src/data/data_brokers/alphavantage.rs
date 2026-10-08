@@ -4,11 +4,11 @@ use crate::utils::parse_date;
 use chrono::Local;
 use reqwest::Client;
 use serde_json::Value;
-use std::error::Error;
+use crate::Error;
 use std::fs;
 
 /// Alpha Vantage fetcher
-pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn Error>> {
+pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Error> {
     // Read parameters from config under [data_api]
     let api_key = &settings.data_api.api_key;
     let tickers = &settings.data_api.tickers;
@@ -23,7 +23,7 @@ pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn E
         "daily" => "TIME_SERIES_DAILY",
         "weekly" => "TIME_SERIES_WEEKLY",
         "monthly" => "TIME_SERIES_MONTHLY",
-        _ => return Err(format!("Unsupported timeframe: {}", timeframe).into()),
+        _ => return Err(Error::Data(format!("Unsupported timeframe: {}", timeframe))),
     };
 
     let client = Client::new();
@@ -54,7 +54,7 @@ pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn E
         // Extract time series from response
         let series_obj = json_val[time_series_key]
             .as_object()
-            .ok_or("Could not parse time series JSON from Alpha Vantage")?;
+            .ok_or(Error::Data("Could not parse time series JSON from Alpha Vantage".into()))?;
 
         for (date_str, values) in series_obj {
             if let Ok(current_date) = parse_date(date_str) {
@@ -65,7 +65,7 @@ pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn E
 
                 let close_val = values["4. close"]
                     .as_str()
-                    .ok_or("Missing close value in JSON")?;
+                    .ok_or(Error::Data("Missing close value in JSON".into()))?;
                 let close_price = close_val.parse::<f64>()?;
 
                 all_records.push(Record {
@@ -82,7 +82,7 @@ pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn E
 
 /// Saves the raw result in
 /// data/raw/{ticker}/{timeframe}/{datetimenow}/raw.json
-fn save_api_result(json_val: &Value, ticker: &str, timeframe: &str) -> Result<(), Box<dyn Error>> {
+fn save_api_result(json_val: &Value, ticker: &str, timeframe: &str) -> Result<(), Error> {
     let today = Local::now().format("%Y-%m-%d").to_string();
     let dir_path = format!("data/raw/{}/{}/{}", ticker, timeframe, today);
     fs::create_dir_all(&dir_path)?;

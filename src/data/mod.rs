@@ -2,7 +2,7 @@ pub mod data_brokers;
 
 use crate::config::Settings;
 use serde::Deserialize;
-use std::error::Error;
+use crate::Error;
 
 #[derive(Debug, Deserialize)]
 pub struct Record {
@@ -14,7 +14,7 @@ pub struct Record {
 pub type HistoricalData = Vec<Record>;
 
 /// Reads CSV into HistoricalData
-fn read_csv(path: &str) -> Result<HistoricalData, Box<dyn Error>> {
+fn read_csv(path: &str) -> Result<HistoricalData, Error> {
     let mut rdr = csv::Reader::from_path(path)?;
     let headers = rdr.headers()?.clone();
     let mut data = Vec::new();
@@ -38,7 +38,7 @@ fn read_csv(path: &str) -> Result<HistoricalData, Box<dyn Error>> {
 }
 
 /// Main Alpha Vantage fetcher
-pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Box<dyn Error>> {
+pub async fn fetch_data(settings: &Settings) -> Result<HistoricalData, Error> {
     match settings.general.data_source.as_str() {
         "csv" => read_csv(&settings.general.data_file),
         "api" => data_brokers::fetch_data(settings).await,

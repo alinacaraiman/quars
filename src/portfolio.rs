@@ -1,7 +1,10 @@
+#[cfg(feature = "data")]
 use crate::data::HistoricalData;
+use crate::math::correlation::{clean_correlation, correlation};
+use crate::Error;
 use ndarray::{Array1, Array2, Axis};
-use std::collections::HashMap;
-use std::error::Error;
+#[cfg(feature = "data")]
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub struct PortfolioStats {
     pub assets: Vec<String>,
@@ -10,61 +13,74 @@ pub struct PortfolioStats {
     pub returns_matrix: Array2<f64>, // shape: (n_assets, n_samples)
 }
 
-pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats, Box<dyn Error>> {
-    // Group prices by asset
-    let mut asset_prices: HashMap<String, Vec<f64>> = HashMap::new();
-    for record in data {
-        asset_prices
-            .entry(record.asset.clone())
-            .or_default()
-            .push(record.price);
+impl PortfolioStats {
+    /// From an (n_assets, n_samples) returns matrix
+    pub fn from_returns(assets: Vec<String>, returns_matrix: Array2<f64>) -> Result<Self, Error> {
+        let mean_returns = returns_matrix
+            .mean_axis(Axis(1))
+            .ok_or("Failed to compute mean returns")?;
+        let covariance = compute_sample_covariance(&returns_matrix)?;
+        Ok(Self {
+            assets,
+            mean_returns,
+            covariance,
+            returns_matrix,
+        })
     }
 
-    let assets: Vec<String> = asset_prices.keys().cloned().collect();
-    let n = assets.len();
-    if n == 0 {
+    /// Covariance with the correlations cleaned by random-matrix eigenvalue clipping
+    pub fn cleaned_covariance(&self) -> Result<Array2<f64>, Error> {
+        let cleaned =
+            clean_correlation(&correlation(&self.covariance)?, self.returns_matrix.ncols())?;
+        let std = self.covariance.diag().mapv(f64::sqrt);
+        Ok(Array2::from_shape_fn(cleaned.dim(), |(i, j)| {
+            cleaned[[i, j]] * std[i] * std[j]
+        }))
+    }
+}
+
+#[cfg(feature = "data")]
+pub fn calculate_portfolio_stats(data: &HistoricalData) -> Result<PortfolioStats, Error> {
+    // Prices by date in chronological order, whatever order the records come in
+    let mut by_date: BTreeMap<&str, HashMap<&str, f64>> = BTreeMap::new();
+    for record in data {
+        by_date
+            .entry(&record.date)
+            .or_default()
+            .insert(&record.asset, record.price);
+    }
+    let assets: Vec<String> = data
+        .iter()
+        .map(|record| record.asset.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if assets.is_empty() {
         return Err("No assets found in data.".into());
     }
 
-    // Find the minimal length of price vector to handle partial data. This is simplified logic.
-    let mut min_len = usize::MAX;
-    for (_asset, prices) in asset_prices.iter() {
-        if prices.len() < min_len {
-            min_len = prices.len();
-        }
-    }
-    if min_len < 2 {
-        return Err("Not enough data points to compute returns.".into());
-    }
-
-    let t = min_len - 1;
-    let mut returns_matrix = Array2::<f64>::zeros((n, t));
-    for (i, asset) in assets.iter().enumerate() {
-        let prices = &asset_prices[asset][0..min_len];
-        for day in 0..(min_len - 1) {
-            let ret = (prices[day + 1] - prices[day]) / prices[day];
-            returns_matrix[[i, day]] = ret;
-        }
+    // Only dates on which every asset has a price
+    let prices: Vec<Vec<f64>> = by_date
+        .values()
+        .filter_map(|day| {
+            assets
+                .iter()
+                .map(|a| day.get(a.as_str()).copied())
+                .collect()
+        })
+        .collect();
+    if prices.len() < 2 {
+        return Err("Not enough common dates to compute returns.".into());
     }
 
-    let mean_returns = returns_matrix
-        .mean_axis(Axis(1))
-        .ok_or("Failed to compute mean returns")?;
-
-    // 4. Compute sample covariance
-    //    Cov = 1/(T-1) * (R_centered * R_centered^T)
-    let covariance = compute_sample_covariance(&returns_matrix)?;
-
-    Ok(PortfolioStats {
-        assets,
-        mean_returns,
-        covariance,
-        returns_matrix,
-    })
+    let returns_matrix = Array2::from_shape_fn((assets.len(), prices.len() - 1), |(i, t)| {
+        (prices[t + 1][i] - prices[t][i]) / prices[t][i]
+    });
+    PortfolioStats::from_returns(assets, returns_matrix)
 }
 
 /// Compute sample covariance from (n_assets x n_samples) returns
-fn compute_sample_covariance(returns: &Array2<f64>) -> Result<Array2<f64>, Box<dyn Error>> {
+fn compute_sample_covariance(returns: &Array2<f64>) -> Result<Array2<f64>, Error> {
     let (n_assets, n_obs) = returns.dim();
     if n_obs < 2 {
         return Err("Not enough observations to compute covariance.".into());
@@ -107,27 +123,72 @@ pub fn compute_portfolio_returns(returns_matrix: &Array2<f64>, weights: &[f64]) 
     }
     port_returns
 }
-pub fn portfolio_var(returns: &[f64], alpha: f64) -> f64 {
-    let mut sorted = returns.to_owned();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
-    if idx >= sorted.len() {
-        return sorted[sorted.len() - 1];
+fn sorted_tail(returns: &[f64], alpha: f64) -> Option<(Vec<f64>, usize)> {
+    if returns.is_empty() {
+        return None;
     }
-    sorted[idx]
+    let mut sorted = returns.to_owned();
+    sorted.sort_by(f64::total_cmp);
+    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
+    Some((sorted, idx))
 }
 
-pub fn portfolio_cvar(returns: &[f64], alpha: f64) -> f64 {
-    let mut sorted = returns.to_owned();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+/// Historical VaR, `None` if `returns` is empty
+pub fn portfolio_var(returns: &[f64], alpha: f64) -> Option<f64> {
+    let (sorted, idx) = sorted_tail(returns, alpha)?;
+    Some(sorted[idx.min(sorted.len() - 1)])
+}
 
-    let idx = ((1.0 - alpha) * sorted.len() as f64).ceil() as usize;
-    if idx >= sorted.len() {
-        return sorted[sorted.len() - 1];
+/// Historical CVaR, `None` if `returns` is empty
+pub fn portfolio_cvar(returns: &[f64], alpha: f64) -> Option<f64> {
+    let (sorted, idx) = sorted_tail(returns, alpha)?;
+    let tail = &sorted[..idx.clamp(1, sorted.len())];
+    Some(tail.iter().sum::<f64>() / tail.len() as f64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn var_cvar() {
+        let r: Vec<f64> = (1..=100).map(|x| x as f64).collect();
+        assert_eq!(portfolio_var(&r, 0.75), Some(26.0));
+        assert_eq!(portfolio_cvar(&r, 0.75), Some(13.0));
     }
 
-    // slice of worst returns
-    let tail = &sorted[0..idx];
-    tail.iter().sum::<f64>() / tail.len() as f64
+    #[cfg(feature = "data")]
+    #[test]
+    fn stats_align_dates() {
+        use crate::data::Record;
+        let record = |date: &str, asset: &str, price| Record {
+            date: date.into(),
+            asset: asset.into(),
+            price,
+        };
+        // Newest first, and B has no price on the 2nd
+        let data = vec![
+            record("2024-01-04", "A", 121.0),
+            record("2024-01-03", "A", 110.0),
+            record("2024-01-02", "A", 105.0),
+            record("2024-01-01", "A", 100.0),
+            record("2024-01-04", "B", 55.0),
+            record("2024-01-03", "B", 50.0),
+            record("2024-01-01", "B", 40.0),
+        ];
+        let stats = calculate_portfolio_stats(&data).unwrap();
+        let expected = ndarray::array![[0.10, 0.10], [0.25, 0.10]];
+        assert!((&stats.returns_matrix - &expected)
+            .iter()
+            .all(|d| d.abs() < 1e-12));
+    }
+
+    #[test]
+    fn empty_and_nan() {
+        assert_eq!(portfolio_var(&[], 0.95), None);
+        assert_eq!(portfolio_cvar(&[], 0.95), None);
+        assert!(portfolio_var(&[f64::NAN, -1.0], 0.95).is_some());
+        assert_eq!(portfolio_cvar(&[1.0], 0.99), Some(1.0));
+    }
 }
